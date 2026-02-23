@@ -1,0 +1,128 @@
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+import time
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+BASE_URL = "https://devpost.com"
+LIST_URL = "https://devpost.com/hackathons"
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0"
+}
+response = requests.get(LIST_URL, headers=HEADERS)
+soup = BeautifulSoup(response.text, "html.parser")
+
+hackathon_cards = soup.find_all("div", class_="hackathon-tile")
+all_data = []
+for card in hackathon_cards:
+    # ---------------- BASIC INFO ----------------
+    name_tag = card.find("h3")
+    name = name_tag.text.strip() if name_tag else "Not Available"
+
+    link_tag = card.find("a", class_="link-to-software")
+    hackathon_url = BASE_URL + link_tag["href"] if link_tag else "Not Available"
+
+    info_tag = card.find("div", class_="info")
+    location_mode = info_tag.text.strip() if info_tag else "Online"
+
+    event_dates = "Not Available"
+    submission_deadline = "Not Available"
+    registration_period = "Not Available"
+    prize_info = "Not Available"
+    theme_tags = "Not Available"
+    status = "Upcoming"
+    participants = "Not Available"
+    try:
+        detail_response = requests.get(hackathon_url, headers=HEADERS, timeout=6)
+        detail_soup = BeautifulSoup(detail_response.text, "html.parser")
+
+        # Event dates
+        date_range = detail_soup.find("span", class_="date-range")
+        if date_range:
+            event_dates = date_range.text.strip()
+
+        # Submission deadline / period
+        submission = detail_soup.find("span", class_="submission-period")
+        if submission:
+            submission_deadline = submission.text.strip()
+            registration_period = submission.text.strip()
+             # Prize info
+        prize = detail_soup.find("div", class_="prizes")
+        if prize:
+            prize_info = prize.text.strip()
+
+        # Themes / tags
+        tags = detail_soup.find_all("a", class_="theme")
+        if tags:
+            theme_tags = ", ".join([t.text.strip() for t in tags])
+
+        # Status inference
+        if "ended" in submission_deadline.lower():
+            status = "Completed"
+        elif "remaining" in submission_deadline.lower():
+            status = "Ongoing"
+
+        time.sleep(1)  # rate limiting (VERY important)
+
+    except Exception:
+        pass
+    all_data.append({
+        "Hackathon Name": name,
+        "Platform": "Devpost",
+        "Event Dates": event_dates,
+        "Submission Deadline": submission_deadline,
+        "Registration Period": registration_period,
+        "Location / Mode": location_mode,
+        "Prize Info": prize_info,
+        "Themes / Tags": theme_tags,
+        "Status": status,
+        "Participants": participants,
+        "Registration Link": hackathon_url
+    })
+   
+df = pd.DataFrame(all_data)
+df.to_csv("hackathon_full_data.csv", index=False)
+
+print("✅ Full hackathon dataset created: hackathon_full_data.csv")
+print(len(df))
+driver = webdriver.Chrome()  # Chrome must be installed
+driver.get("https://devpost.com/hackathons")
+
+time.sleep(5)  # let page load fully
+
+cards = driver.find_elements(By.CLASS_NAME, "challenge-card")
+hackathons = []
+
+for card in cards:
+    try:
+        name = card.find_element(By.CLASS_NAME, "title").text
+    except:
+        name = "Not Available"
+    try:
+        deadline = card.find_element(By.CLASS_NAME, "submission-period").text
+    except:
+        deadline = "Not Available"
+
+    try:
+        prize = card.find_element(By.CLASS_NAME, "prize").text
+    except:
+        prize = "Not Available"
+
+    try:
+        link = card.find_element(By.TAG_NAME, "a").get_attribute("href")
+    except:
+        link = "Not Available"
+
+    hackathons.append({
+        "Hackathon Name": name,
+        "Submission Deadline": deadline,
+        "Prize Info": prize,
+        "Link": link
+    })
+
+driver.quit()
+df = pd.DataFrame(hackathons)
+df.to_csv("hackathon_full_data.csv", index=False)
+
+print("✅ Data saved. Rows:", len(df))
